@@ -43,6 +43,20 @@ namespace CodeForgeDemo
             Editor.ExternalCompletionProvider = XamlCompletionProvider.GetForEditor;
             Editor.Code = Sample;
 
+            // —— SDK 事件演示 ——
+            // ① CodeTextChanged：C#/XAML 两种模式的富信息变更通知（全文 + 光标 + 语言模式）
+            Editor.CodeTextChanged += (s, e) =>
+            {
+                // 宿主可在此做实时代码分析 / 影子文档同步；演示仅置标题
+                Title = $"XAML 演示（{e.Code.Length} 字符 · {(e.IsXamlMode ? "XAML" : "C#")}）";
+            };
+            // ② XamlEventHandlerCommitted：Click= 之类采纳处理器名后通知宿主 ——
+            //    DesignerKit 正式版在此按 HandlerName 往 CodeBehind 生成方法桩；演示弹窗确认通知链路。
+            Editor.XamlEventHandlerCommitted += (s, e) =>
+                MessageBox.Show(this,
+                    $"SDK 通知：请在代码后置生成方法桩\n\n  元素：{e.TagName}\n  事件：{e.AttributeName}\n  处理器：{e.HandlerName}",
+                    "XamlEventHandlerCommitted", MessageBoxButton.OK, MessageBoxImage.Information);
+
             ApplyThemeState();                          // 打开时对齐当前主题
             DemoThemeState.Changed += OnThemeChanged;   // 主窗口切主题实时跟随
         }

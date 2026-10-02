@@ -23,15 +23,15 @@
          AvalonEdit / Roslyn 是 Demo 的 XAML 与 C# 里直接书写的类型（TextEditor / DiagnosticSeverity），
          编译期需要引用解析；Private=false 不复制到输出——运行期由 CodeForge 内嵌加载器提供。 -->
     <Reference Include="CodeForge">
-      <HintPath>libs\CodeForge.dll</HintPath>
+      <HintPath>..\libs\CodeForge.dll</HintPath>
       <Private>true</Private>
     </Reference>
     <Reference Include="ICSharpCode.AvalonEdit">
-      <HintPath>libs\ICSharpCode.AvalonEdit.dll</HintPath>
+      <HintPath>..\libs\ICSharpCode.AvalonEdit.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="Microsoft.CodeAnalysis">
-      <HintPath>libs\Microsoft.CodeAnalysis.dll</HintPath>
+      <HintPath>..\libs\Microsoft.CodeAnalysis.dll</HintPath>
       <Private>false</Private>
     </Reference>
   </ItemGroup>

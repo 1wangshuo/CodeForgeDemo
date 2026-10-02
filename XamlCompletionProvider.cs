@@ -165,6 +165,39 @@ namespace CodeForgeDemo
             }),
         };
 
+        // —— 事件属性（= 后提示处理器名，采纳后经 CodeEditorControl.XamlEventHandlerCommitted 通知宿主建桩）——
+        private static readonly HashSet<string> EventAttributes = new(StringComparer.Ordinal)
+        {
+            "Click", "Checked", "Unchecked", "TextChanged", "SelectionChanged", "Loaded", "Unloaded",
+            "MouseDown", "MouseUp", "MouseMove", "MouseEnter", "MouseLeave", "MouseDoubleClick",
+            "KeyDown", "KeyUp", "GotFocus", "LostFocus", "ValueChanged", "Scroll", "Drop", "DragEnter",
+        };
+
+        /// <summary>'=' 左侧最近的元素名（Button / hc:Rate…），取不到返回 null。</summary>
+        private static string? TryTagNameBefore(string left, int eqPos)
+        {
+            int lt = left.LastIndexOf('<', eqPos);
+            if (lt < 0) return null;
+            int i = lt + 1;
+            while (i < left.Length && (char.IsLetterOrDigit(left[i]) || left[i] == '_' || left[i] == '.' || left[i] == ':')) i++;
+            if (i == lt + 1) return null;
+            return left.Substring(lt + 1, i - lt - 1);
+        }
+
+        /// <summary>事件属性的处理器候选：元素名_事件名（Button → Button_Click）。</summary>
+        private static List<CodeCompletionItem> BuildEventHandlerCandidates(string attr, string? tagName, bool withQuotes)
+        {
+            var tag = string.IsNullOrEmpty(tagName) ? "Element" : tagName;
+            if (tag.Contains(':')) tag = tag.Substring(tag.IndexOf(':') + 1);   // hc:Rate → Rate
+            var handler = tag + "_" + attr;
+            return new List<CodeCompletionItem>
+            {
+                Item(handler, CompletionItemKind.Method, "生成处理器",
+                    $"采纳后通知宿主在代码后置生成 {handler} 方法桩",
+                    insertText: withQuotes ? "\"" + handler + "\"" : handler),
+            };
+        }
+
         // —— 属性常见取值 ——
         private static readonly Dictionary<string, string[]> _values = new(StringComparer.Ordinal)
         {
@@ -219,11 +252,19 @@ namespace CodeForgeDemo
             if (string.IsNullOrEmpty(text) || caret <= 0) return null;
             var left = text.Substring(0, caret);
 
+            // ⓪ 闭合标签：'</' 后 → 提示当前未闭合的标签（内层在前，VS 同款）
+            var closing = BuildClosingTagCandidates(text, caret);
+            if (closing != null) return closing;
+
             // ③b '=' 直后（还没引号）：XAML 惯例 —— 打完 = 立即提示取值，选完写入 ="值"。
             //    输入过滤仍按裸值名（FilterText），采纳用带引号的 InsertText。
+            //    事件属性（Click= 之类）→ 提示"元素名_事件名"处理器（Kind=Method，
+            //    采纳后 CodeEditorControl 触发 XamlEventHandlerCommitted 让宿主建方法桩）。
             var eqCtx = TryAttributeValueAfterEquals(left);
             if (eqCtx != null)
             {
+                if (eqCtx != string.Empty && EventAttributes.Contains(eqCtx))
+                    return BuildEventHandlerCandidates(eqCtx, TryTagNameBefore(left, left.Length - 1), withQuotes: true);
                 if (eqCtx == string.Empty || !_values.TryGetValue(eqCtx, out var vals0))
                     return null;
                 return vals0.Select(v => Item(v, CompletionItemKind.EnumMember, "取值", $"属性 {eqCtx} 的取值",
@@ -234,6 +275,8 @@ namespace CodeForgeDemo
             var valueCtx = TryAttributeValue(left);
             if (valueCtx != null)
             {
+                if (valueCtx != string.Empty && EventAttributes.Contains(valueCtx))
+                    return BuildEventHandlerCandidates(valueCtx, null, withQuotes: false);   // 引号已就位，只补名
                 if (valueCtx == string.Empty || !_values.TryGetValue(valueCtx, out var vals))
                     return null;
                 return vals.Select(v => Item(v, CompletionItemKind.EnumMember, "取值", $"属性 {valueCtx} 的取值")).ToList();
@@ -251,8 +294,11 @@ namespace CodeForgeDemo
             //    带冒号 = 命名空间前缀态：**文档里声明了 xmlns 才提示**（跟 using 一个道理）——
             //    xmlns 值含 handycontrol → HC 组；声明了但不是控件命名空间（如 x:）→ 不弹；
             //    没声明的前缀 → 不弹。带 '.'（如 <Grid.）= 非法 → 不弹。
+            //    且这个 '<' 必须开在"正文位"（往前最近的结构字符是 '>' 或文档头）：
+            //    敲在未闭合标签内部 / 引号值里的 '<' 是非法嵌套 → 不弹元素表，
+            //    否则选中后元素名会被拼进标签区域（如 ">StackPanel>" 残句）。
             int lt = left.LastIndexOf('<');
-            if (lt >= 0)
+            if (lt >= 0 && IsFreshTagStart(text, lt))
             {
                 var between = left.Substring(lt + 1);
                 if (between.Length == 0)
@@ -277,6 +323,64 @@ namespace CodeForgeDemo
             }
 
             return null;
+        }
+
+        /// <summary>
+        /// '&lt;/' 态（caret-2 是 '&lt;'、caret-1 是 '/'）→ 扫描光标之前的文档，收集<b>未闭合</b>的
+        /// 起始标签栈（跳过注释/CDATA，自闭合不入栈，闭合按同名弹栈），内层在前生成候选。
+        /// 只补标签名（不带 '&gt;'，避免手敲 &gt; 时拼出 '&gt;&gt;'）；栈空（无欠账）→ null 不弹。
+        /// </summary>
+        private static List<CodeCompletionItem>? BuildClosingTagCandidates(string text, int caret)
+        {
+            if (caret < 2 || text[caret - 2] != '<' || text[caret - 1] != '/') return null;
+
+            var stack = new List<string>();          // 未闭合起始标签，外层在前
+            int len = caret - 2;                     // 扫描范围不含刚敲的 '</'
+            int i = 0;
+            while (i < len)
+            {
+                if (text[i] != '<') { i++; continue; }
+                if (i + 4 <= len && string.Compare(text, i, "<!--", 0, 4, StringComparison.Ordinal) == 0)
+                {                                    // 注释整体跳过
+                    int e = text.IndexOf("-->", i, StringComparison.Ordinal);
+                    if (e < 0 || e >= len) break;
+                    i = e + 3; continue;
+                }
+                if (i + 9 <= len && string.Compare(text, i, "<![CDATA[", 0, 9, StringComparison.Ordinal) == 0)
+                {
+                    int e = text.IndexOf("]]>", i, StringComparison.Ordinal);
+                    if (e < 0 || e >= len) break;
+                    i = e + 3; continue;
+                }
+                bool closing = i + 1 < len && text[i + 1] == '/';
+                int s = i + (closing ? 2 : 1), n = s;
+                while (n < len && (char.IsLetterOrDigit(text[n]) || text[n] == '_' || text[n] == '.' || text[n] == ':')) n++;
+                if (n == s) { i++; continue; }       // <? / <! 等非元素
+                string name = text.Substring(s, n - s);
+                int g = n, q = 0;                    // 找本标签的 '>'（跳过属性引号）
+                while (g < len)
+                {
+                    char c = text[g];
+                    if (c == '"') q ^= 1;
+                    else if (c == '>' && q == 0) break;
+                    g++;
+                }
+                bool selfClosed = g < len && g > s && text[g - 1] == '/';
+                i = g < len ? g + 1 : len;
+                if (closing)
+                {                                    // 弹栈：从内向外找同名（畸形嵌套容错）
+                    for (int k = stack.Count - 1; k >= 0; k--)
+                        if (stack[k] == name) { stack.RemoveAt(k); break; }
+                }
+                else if (!selfClosed && !stack.Contains(name))
+                    stack.Add(name);
+            }
+
+            if (stack.Count == 0) return null;
+            var list = new List<CodeCompletionItem>();
+            for (int k = stack.Count - 1; k >= 0; k--)   // 内层在前 = 最该先闭合的排最前
+                list.Add(Item(stack[k], CompletionItemKind.Class, "闭合", $"</{stack[k]}> — 补齐未闭合的标签"));
+            return list;
         }
 
         /// <summary>
@@ -333,6 +437,34 @@ namespace CodeForgeDemo
         /// <summary>元素名局部字符：字母/数字/下划线/冒号（前缀），不含 '.'。</summary>
         private static bool IsElementNameChars(string s)
             => s.All(c => char.IsLetterOrDigit(c) || c == '_' || c == ':');
+
+        /// <summary>
+        /// 位于 lt 的 '&lt;' 是否开在"正文位"（新标签的合法起点）：
+        /// 从 lt-1 往前找最近的结构字符——遇到 '&gt;' 或文档头 → 是正文位；
+        /// 遇到另一个 '&lt;' → 说明还悬在未闭合标签（或注释）里，这个 '&lt;' 是非法嵌套 → 不是；
+        /// 引号值内的 '&lt;'（往前先撞上悬空/成对引号）→ 也不是。
+        /// </summary>
+        private static bool IsFreshTagStart(string text, int lt)
+        {
+            int i = lt - 1;
+            while (i >= 0)
+            {
+                char c = text[i];
+                if (c == '"' || c == '\'')
+                {
+                    char quote = c;
+                    i--;
+                    while (i >= 0 && text[i] != quote) i--;
+                    if (i < 0) return false;        // lt 在悬空引号值里
+                    i--;
+                    continue;
+                }
+                if (c == '>') return true;          // 上一个标签已闭合 → 正文位
+                if (c == '<') return false;         // 未闭合标签/注释还悬着 → 非法嵌套
+                i--;
+            }
+            return true;                            // 文档头
+        }
 
         /// <summary>
         /// 光标紧跟 '='（或 '=' 后未闭合的部分值名）：返回属性名（不在该形态返回 null，无词表返回空串）。
