@@ -1,0 +1,57 @@
+<Project Sdk="Microsoft.NET.Sdk.WindowsDesktop">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>CodeForgeDemo</RootNamespace>
+    <AssemblyName>CodeForgeDemo</AssemblyName>
+    <LangVersion>latest</LangVersion>
+    <Platforms>AnyCPU;x64</Platforms>
+    <Prefer32Bit>false</Prefer32Bit>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      ===== 单文件分发演示 =====
+      Demo 的 XAML 直接用了 HandyControl 控件（hc:Window 等），HC 是 Demo 自己的编译引用；
+      CodeForge 类库本体不引用 HC。Roslyn / AvalonEdit 等其余依赖全部嵌入 CodeForge.dll，
+      由其内置加载器自举，无需复制到本 Demo 输出目录。
+    -->
+    <PackageReference Include="HandyControl" Version="3.5.1" />
+    <!-- 不用项目引用：直接引用现成 CodeForge.dll（单文件自包含，全部依赖已嵌入）。
+         演示用的样例库 UserLibrary.dll 已就位于 References\，运行期经引用管理器手动添加。
+         AvalonEdit / Roslyn 是 Demo 的 XAML 与 C# 里直接书写的类型（TextEditor / DiagnosticSeverity），
+         编译期需要引用解析；Private=false 不复制到输出——运行期由 CodeForge 内嵌加载器提供。 -->
+    <Reference Include="CodeForge">
+      <HintPath>libs\CodeForge.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="ICSharpCode.AvalonEdit">
+      <HintPath>libs\ICSharpCode.AvalonEdit.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Microsoft.CodeAnalysis">
+      <HintPath>libs\Microsoft.CodeAnalysis.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <!-- ============================================================
+       单文件分发落地：CodeForge 的全部依赖（Roslyn / AvalonEdit 等）已嵌入
+       CodeForge.dll，运行期由 App 静态构造里的 CodeForgeRuntime.Initialize() 注册的
+       AssemblyResolve 从内嵌资源自举，这些依赖【无需】复制到 Demo 输出目录。
+       例外：HandyControl —— Demo 自己的 XAML（hc:Window + HC 主题字典）直接使用，
+       且 CodeForge 库已不再内嵌 HC（引用最小化），必须物理留在输出目录。
+
+       下面在 ResolveAssemblyReferences 之后，把「复制到输出」清单里除
+       CodeForge.dll / HandyControl.dll 以外的传递依赖全部剔除。
+       注意：仅影响「复制到输出」，不影响编译期引用集（ReferencePath）——
+       csc 与 XAML 标记编译器仍能解析 HandyControl / Roslyn / AvalonEdit 类型。
+       -->
+  <Target Name="TrimEmbeddedDepsFromDemoOutput" AfterTargets="ResolveAssemblyReferences">
+    <ItemGroup>
+      <ReferenceCopyLocalPaths Remove="@(ReferenceCopyLocalPaths)"
+                               Condition="'%(Filename)' != 'CodeForge' And '%(Filename)' != 'HandyControl'" />
+    </ItemGroup>
+  </Target>
+</Project>
