@@ -1,0 +1,67 @@
+<Window x:Class="CodeForgeDemo.ScriptDemoWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:cf="clr-namespace:CodeForge;assembly=CodeForge"
+        Title="脚本编辑器示例 —— 只写方法体，给 Result 赋值即可（包装代码自动生成）"
+        Height="720"
+        Width="980"
+        MinHeight="480"
+        MinWidth="720"
+        WindowStartupLocation="CenterScreen"
+        Background="{DynamicResource RegionBrush}">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="200"/>
+        </Grid.RowDefinitions>
+
+        <!-- 脚本体编辑器：只显示方法体（空着打开，直接给 Result 赋值/写流程逻辑） -->
+        <cf:ScriptBodyControl x:Name="Script" Grid.Row="0"/>
+
+        <!-- 操作栏 -->
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="8,4,8,4">
+            <Button x:Name="BtnCompile"
+                    Content="编译"
+                    Width="90" Height="30"
+                    Click="BtnCompile_Click"
+                    ToolTip="只编译（不运行）：自动包装方法体 → Roslyn 编译，错误/警告波浪线映射回方法体"/>
+            <Button x:Name="BtnRun"
+                    Content="执行 (F5)"
+                    Width="110" Height="30"
+                    Margin="8,0,0,0"
+                    Background="#FF2D8CF0" BorderBrush="#FF2D8CF0"
+                    Foreground="White" FontWeight="Bold"
+                    Click="BtnRun_Click"/>
+            <Button x:Name="BtnShowScript"
+                    Content="查看完整脚本"
+                    Width="110" Height="30"
+                    Margin="8,0,0,0"
+                    Click="BtnShowScript_Click"/>
+            <CheckBox Content="鸟瞰图"
+                      VerticalAlignment="Center"
+                      Margin="16,0,0,0"
+                      Foreground="{DynamicResource SecondaryTextBrush}"
+                      IsChecked="{Binding ShowMiniMap, ElementName=Script, Mode=TwoWay}"
+                      ToolTip="透传属性演示：勾选/取消即时显隐内部编辑器的鸟瞰图"/>
+            <TextBlock x:Name="TxtStatus"
+                       VerticalAlignment="Center"
+                       Margin="16,0,0,0"
+                       FontSize="12"
+                       Foreground="{DynamicResource SecondaryTextBrush}"/>
+        </StackPanel>
+
+        <!-- 输出区：返回值 / Console 输出 / 错误 / 完整脚本 -->
+        <TextBox x:Name="TxtOutput"
+                 Grid.Row="2"
+                 Margin="8,0,8,8"
+                 IsReadOnly="True"
+                 IsReadOnlyCaretVisible="True"
+                 VerticalScrollBarVisibility="Auto"
+                 HorizontalScrollBarVisibility="Auto"
+                 FontFamily="Consolas"
+                 FontSize="12"
+                 TextWrapping="NoWrap"
+                 Text="（输出区：执行结果显示在这里；“查看完整脚本”展示自动包装后的代码）"/>
+    </Grid>
+</Window>
