@@ -1,0 +1,19 @@
+<Application x:Class="CodeForgeDemo.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:hc="https://handyorg.github.io/handycontrol"
+             StartupUri="MainWindow.xaml">
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <!-- HandyControl 3.5 主题（默认浅色）→ 必须用 SharedResourceDictionary！
+                     SkinDefault.xaml / Theme.xaml 在 HandyControl 内部是 SharedResourceDictionary 单例；
+                     如果这里写成普通 ResourceDictionary，hc:Window 初始化时也会尝试 Merge 同一个单例 RD 实例，
+                     第二次 Merge 会抛：InnerException = "无法重新初始化 ResourceDictionary 实例"
+                     （对应 XamlParseException DeferrableContent 设置属性失败 行 18） -->
+                <hc:SharedResourceDictionary Source="pack://application:,,,/HandyControl;component/Themes/SkinDefault.xaml"/>
+                <hc:SharedResourceDictionary Source="pack://application:,,,/HandyControl;component/Themes/Theme.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>
